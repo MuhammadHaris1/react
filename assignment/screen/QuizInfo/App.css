@@ -1,0 +1,34 @@
+.back{
+    border: none;
+    float: left;
+    text-decoration: underline;
+    font: 20px sans-serif;
+    padding: 5px;
+    border-radius: 10px
+}
+.quiz-details{
+    border: 1px solid black;
+    margin-left: 10px;
+    margin-right: 10px;
+    margin-top: 30px
+
+}
+.quiz-details h1{
+    border: 1px solid black;
+    /* border: none; */
+    background-color: gray;
+    margin-top: -3px ;
+    box-shadow: 2px 5px 9px 1px black;
+    /* text-shadow: 0px 0px 5px 10px black */
+}
+.quiz-details button {
+    background-color: indianred;
+    border: none;
+    padding: 10px;
+    color: white
+}
+.quiz-details button:hover{
+    background-color: rgb(224, 137, 137);
+    color: black;
+
+}
