@@ -1,23 +1,49 @@
 import React, { Component } from 'react';
 import firebase from './Config/Firebase';
 import './App.css';
-import { AppBar, Toolbar, IconButton, Typography, Button, List, ListItem, Avatar, ListItemText, Stepper, Step } from '@material-ui/core'
+import classNames from 'classnames';
+import { withStyles } from '@material-ui/core/styles';
+import PersistentDrawerLeft from './Components/Constant/AppBar'
+import { AppBar, 
+  Toolbar, 
+  IconButton, 
+  Typography, 
+  Button, 
+  List, 
+  ListItem, 
+  Avatar, 
+  ListItemText, 
+  Stepper, 
+  Step,
+  CssBaseline,
+  Drawer,
+  Divider,
+  ListItemIcon
+} from '@material-ui/core';
+import PropTypes from 'prop-types';
+import MenuIcon from '@material-ui/icons/Menu';
+import ChevronLeftIcon from '@material-ui/icons/ChevronLeft';
+import ChevronRightIcon from '@material-ui/icons/ChevronRight';
 import StyledFirebaseAuth from 'react-firebaseui/StyledFirebaseAuth';
 import Login from './Screen/Login'
 import Dashboard from './Screen/Dashboard';
 import Routes from './Config/Router';
 import { BrowserRouter as Router, Route, Link } from "react-router-dom";
+import history from './Config/history'
+// import state from 'sweetalert/typings/modules/state';
 
 class App extends Component {
   constructor() {
     super()
     this.state = {
       isSignedIn: false,
-      currentUser: null
+      currentUser: null,
+      uidArr: [],
+      open: false,
     }
     // this.sign = this.sign.bind(this);
-    this.renderProfile = this.renderProfile.bind(this);
     this.logout = this.logout.bind(this)
+    // console.log(props)
   }
 
   uiConfig = {
@@ -26,14 +52,22 @@ class App extends Component {
       firebase.auth.FacebookAuthProvider.PROVIDER_ID
     ],
     callBack: {
-      sigInSuccess: () => false
+      sigInSuccess: () => false,
     }
+    
   }
   componentDidMount = () => {
+    const { uidArr } = this.state;
     firebase.auth().onAuthStateChanged(user => {
+      // console.log(user)
+      uidArr.includes(firebase.auth().currentUser.uid) ?history.push(`/setup-profile`) : history.push(`/dashboard/${user.displayName}`)
+        
+      localStorage.setItem('uid', user.uid)
       var currentUseruid = firebase.auth().currentUser.uid
       firebase.database().ref(`/users/${currentUseruid}/`).on('child_added', snapShot => {
         var currentUser = snapShot.val()
+        // console.log(currentUser)
+        
         this.setState({ currentUser })
       })
       this.setState({ isSignedIn: !!user })
@@ -42,77 +76,41 @@ class App extends Component {
 
   }
 
+  componentWillMount() {
+    const { uidArr } = this.state;
+    firebase.database().ref(`/users/`).on('child_added', snapShot => {
+      var currentUser = snapShot.val()
+      // console.log(currentUser)
+      uidArr.push(currentUser.uid)
+      this.setState({uidArr})
+    })
+  }
+
   logout() {
-    firebase.auth().signOut()
     this.setState({ isSignedIn: false, currentUser: null })
   }
 
-  renderHeader() {
-    const { isSignedIn } = this.state
-    return (
-      <div className="head">
-        <AppBar position="static" >
-          <Toolbar>
-            <IconButton color="inherit" aria-label="Menu">
-              {/* <MenuIcon /> */}
-              <Typography variant="title" color="inherit" >
-                Meeting App
-            </Typography>
-            </IconButton>
-            {isSignedIn ? (
-                  <div style={{float: 'right', marginLeft: 200}}>
-                    <List >
-                      <ListItem>
-                        <Avatar src={firebase.auth().currentUser.photoURL} />
-                        <ListItemText primary={firebase.auth().currentUser.displayName} />
-                    <Button onClick={this.logout}>Log Out</Button>
-                      </ListItem>
-                    </List>
-                  </div>
-              
-            ) :
-              <div className="login-but">
-                <StyledFirebaseAuth
-                  uiConfig={this.uiConfig}
-                  firebaseAuth={firebase.auth()}
-                />
-              </div>
-            }
-          </Toolbar>
-        </AppBar>
-      </div>
-    );
-  }
+  handleDrawerOpen = () => {
+    this.setState({ open: true });
+  };
 
-  renderProfile() {
-    // const { isSignedIn } = this.state
-    return (
-      <div>
-        <img src={firebase.auth().currentUser.photoURL} />
-        <p>{firebase.auth().currentUser.displayName}</p>
-        <button onClick={this.logout} > logout</button>
-      </div>
-    )
-  }
+  handleDrawerClose = () => {
+    this.setState({ open: false });
+  };
 
   render() {
-    const { isSignedIn, currentUser } = this.state
-    // console.log(currentUser)
+    const { isSignedIn, currentUser, open } = this.state;
+    console.log(this.props)
+    
     return (
       <div className="App">
-        {this.renderHeader()}
-        <p className="App-intro">
+        <PersistentDrawerLeft logout={this.logout} />          
+     
           {isSignedIn && !currentUser && <Login />}
-          {isSignedIn && currentUser && <Dashboard />}
-        </p>
-        <Stepper>
-          <Step>First step</Step>
-        </Stepper>
+          {isSignedIn && currentUser && <Dashboard logout={this.logout} />}
       </div>
     );
   }
 }
 
 export default App;
-
-

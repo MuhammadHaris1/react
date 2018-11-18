@@ -2,6 +2,8 @@
 /* global google */
 
 import React, { Component } from 'react'
+import PersistentDrawerLeft from '../../Components/Constant/AppBar';
+
 import {
     Button,
     TextField,
@@ -20,7 +22,8 @@ import {
     Tab,
     Typography,
     Zoom,
-    Icon
+    Icon,
+    Badge
 } from '@material-ui/core';
 import SwipeableViews from 'react-swipeable-views';
 import { Card, CardWrapper } from 'react-swipeable-cards';
@@ -32,7 +35,7 @@ import '../../App.css';
 import { Slide } from 'react-slideshow-image';
 import MeetingPoint from './MeetingPoint';
 import { withScriptjs, withGoogleMap, GoogleMap, Marker, DirectionsRenderer } from "react-google-maps";
-
+import ApBar from '../../Components/Constant/AppBar'
 
 function TabContainer(props) {
     const { children, dir } = props;
@@ -60,10 +63,14 @@ class Dashboard extends Component {
         this.state = {
             startMeeting: false,
             meetingScreen: false,
+            // meetingLocation:{},
             data: [],
             currentUser: {},
-            meetings: [],
+            meetingReciever: [],
+            meetingSender: [],
             value: 0,
+            meetingLocation: null,
+            pendingReqArr: []
         }
         this.renderMeetingScreen = this.renderMeetingScreen.bind(this)
         this.swipRight = this.swipRight.bind(this)
@@ -72,16 +79,34 @@ class Dashboard extends Component {
         this.sendReq = this.sendReq.bind(this)
         this.getMeetings = this.getMeetings.bind(this)
         this.getDirections = this.getDirections.bind(this)
+        this.getPendingMeeting = this.getPendingMeeting.bind(this)
     }
 
-    // componentWillMount() {
+    componentWillMount() {
+        var uid = localStorage.getItem('uid')
+        this.setState({ uid })
+    }
 
-    // }
+    getPendingMeeting() {
+        const { uid, pendingReqArr } = this.state
+        firebase.database().ref('/meetings/').on('child_added', snap => {
+            var pendingReq = snap.val()
+            if (pendingReq.status === 'pending' &&  pendingReq.recieverId === uid) {
+                console.log(pendingReq)
+                pendingReqArr.push(pendingReq)
+                this.setState({ pendingReqArr })
+            }
+            else {
+                console.log('no pendings')
+            }
+        })
+    }
 
     componentDidMount() {
+        this.getPendingMeeting()
         this.getMeetings()
         this.getUsers()
-        firebase.database().ref(`/users/${firebase.auth().currentUser.uid}/`).on('child_added', snapShot => {
+        firebase.database().ref(`/users/${this.state.uid}/`).on('child_added', snapShot => {
             // console.log(snapShot.val())
             var currentUser = snapShot.val()
             this.setState({ currentUser })
@@ -100,7 +125,7 @@ class Dashboard extends Component {
         firebase.database().ref(`/users/`).on('child_added', snap => {
             var users = snap.val()
             for (var key in users) {
-                if (users[key].uid !== firebase.auth().currentUser.uid) {
+                if (users[key].uid !== this.state.uid) {
                     data.push(users[key])
                     this.setState({ data })
                 }
@@ -111,18 +136,28 @@ class Dashboard extends Component {
     }
 
     getMeetings() {
-        const { meetings } = this.state
+        const { meetingSender, meetingReciever } = this.state
         firebase.database().ref(`/meetings/`).on('child_added', snap => {
-            console.log(snap.val())
+            // console.log(snap.val())
             const meeting = snap.val()
-            meetings.push(meeting)
-            this.setState({ meetings })
+            const key = [snap.key]
+            meeting.key = snap.key
+            if (meeting.senderId === this.state.uid) {
+                meetingSender.push(meeting)
+                this.setState({ meetingSender })
+            }
+            if (meeting.recieverId === this.state.uid) {
+                meetingReciever.push(meeting)
+                // console.log([meeting, ...key])
+                this.setState({ meetingReciever })
+            }
         })
     }
 
     sendReq() {
         // console.log(item)
-        const { date, time, meetingLocation, meetingReciever } = this.state
+        const { date, time, meetingLocation, meetingReciever } = this.state;
+        // console.log(meetingLocation)
         const reqObj = {
             date: date,
             time: time,
@@ -131,8 +166,10 @@ class Dashboard extends Component {
             senderName: firebase.auth().currentUser.displayName,
             senderProfilePic: firebase.auth().currentUser.photoURL,
             recieverProfilePic: meetingReciever.profilePic,
-            senderId: firebase.auth().currentUser.uid,
-            recieverId: meetingReciever.uid
+            senderId: this.state.uid,
+            recieverId: meetingReciever.uid,
+            status: 'pending',
+            sendingDate: new Date().toLocaleDateString()
         }
         console.log(reqObj)
         firebase.database().ref(`/meetings/`).push(reqObj)
@@ -181,6 +218,7 @@ class Dashboard extends Component {
     }
 
     meetingLocation(value) {
+
         this.setState({ meetingLocation: value })
         // console.log(value)
     }
@@ -188,7 +226,6 @@ class Dashboard extends Component {
     renderMeetingScreen() {
         const { items, newItems, meetingLocation } = this.state;
         // console.log('items', 'newItems')
-        // console.log(items, newItems)
         return (
             <div>
                 <h1>Select place where you want to meet</h1>
@@ -215,7 +252,7 @@ class Dashboard extends Component {
     }
 
     swipRight(item, index) {
-        console.log(item)
+        // console.log(item)
         const { data } = this.state
         swal({
             title: `you want to meet ${item.fullName} ?`,
@@ -290,8 +327,27 @@ class Dashboard extends Component {
         )
     }
 
+    rejectReq(key, index) {
+        const { meetingReciever, meetingSender } = this.state
+        firebase.database().ref(`/meetings/${key}/`).update({ status: 'cencelled' })
+        meetingReciever[index].status = 'cencelled'
+        // meetingSender[index].status = 'accepted'
+        // console.log(meetingReciever[index], meetingSender[index])
+        this.setState({ meetingReciever })
+    }
+
+    acceptReq(key, index) {
+        const { meetingReciever, meetingSender } = this.state
+        firebase.database().ref(`/meetings/${key}/`).update({ status: 'accepted' })
+        meetingReciever[index].status = 'accepted'
+        // meetingSender[index].status = 'accepted'
+        // console.log(meetingReciever[index], meetingSender[index])
+        this.setState({ meetingReciever })
+    }
+
     renderMeetings() {
-        const { meetings } = this.state
+        const { meetingSender, meetingReciever, pendingReqArr } = this.state
+        console.log(pendingReqArr)
         return (
             <div>
                 <AppBar position='static' color='default'>
@@ -303,7 +359,14 @@ class Dashboard extends Component {
                         fullWidth
                     >
                         <Tab label="My Meetings" />
-                        <Tab label="Meetings Request" />
+                        {pendingReqArr.length === 0  ? <Tab label="Meeting Requests" />
+                        :<Tab
+                        label={
+                            <Badge color="secondary" badgeContent={pendingReqArr.length}>
+                                Meeting Requests
+                            </Badge>}
+                            />
+                            }
                         {/* <Tab label="Item Three" /> */}
                     </Tabs>
                 </AppBar>
@@ -311,7 +374,7 @@ class Dashboard extends Component {
                     onChangeIndex={index => this.setState({ value: index })}
                     index={this.state.value}
                 >
-                    <TabContainer>
+                    {meetingSender.length >= 1 ? <TabContainer>
                         <Paper >
                             <Table>
                                 <TableHead>
@@ -323,18 +386,18 @@ class Dashboard extends Component {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {meetings.map((value, index) => {
+                                    {meetingSender.map((value, index) => {
                                         // console.log(value)
-                                        if (value.senderId == firebase.auth().currentUser.uid) {
+                                        if (value.senderId == this.state.uid) {
 
                                             return <TableRow>
                                                 <TableCell component='th' scope='row' >
                                                     <ListItem>
                                                         <Avatar src={value.recieverProfilePic} />
-                                                        <ListItemText primary={value.recieverName} secondary="Jan 9, 2014" />
+                                                        <ListItemText primary={value.recieverName} secondary={value.sendingDate} />
                                                     </ListItem>
                                                 </TableCell>
-                                                <TableCell>pending</TableCell>
+                                                <TableCell>{value.status}</TableCell>
                                                 <TableCell>{value.date} & {value.time}</TableCell>
                                                 <TableCell><Button color='secondary'>Get Directiom</Button></TableCell>
 
@@ -344,108 +407,116 @@ class Dashboard extends Component {
                                 </TableBody>
                             </Table>
                         </Paper>
-                    </TabContainer>
-                    <TabContainer >
-                    <Paper >
-                        <Table>
-                            <TableHead>
-                                <TableRow>
-                                    <TableCell></TableCell>
-                                    <TableCell>Status</TableCell>
-                                    <TableCell>Meeting Date & Time</TableCell>
-                                    <TableCell>Location</TableCell>
-                                </TableRow>
-                            </TableHead>
-                            <TableBody>
-                                {meetings.map((value, index) => {
-                                    // console.log(value)
-                                    if (value.recieverId == firebase.auth().currentUser.uid) {
+                    </TabContainer> : <h2>No Meetings Yet...</h2>}
+                    {meetingReciever.length >= 1 ? <TabContainer >
+                        <Paper >
+                            <Table>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell></TableCell>
+                                        <TableCell>Status</TableCell>
+                                        <TableCell>Meeting Date & Time</TableCell>
+                                        <TableCell>Location</TableCell>
 
-                                        return <TableRow>
-                                            <TableCell component='th' scope='row' >
-                                                <ListItem>
-                                                    <Avatar src={value.senderProfilePic} />
-                                                    <ListItemText primary={value.senderName} secondary="Jan 9, 2014" />
-                                                </ListItem>
-                                            </TableCell>
-                                            <TableCell>pending</TableCell>
-                                            <TableCell>{value.date} & {value.time}</TableCell>
-                                            <TableCell><Button color='secondary'>Get Directiom</Button></TableCell>
-                                        </TableRow>
-                                    }
-                                })}
-                            </TableBody>
-                        </Table>
-                    </Paper>
-                    </TabContainer>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {meetingReciever.map((value, index) => {
+                                        // console.log(value)
+                                        if (value.recieverId == this.state.uid) {
+
+                                            return <TableRow>
+                                                <TableCell component='th' scope='row' >
+                                                    <ListItem>
+                                                        <Avatar src={value.senderProfilePic} />
+                                                        <ListItemText primary={value.senderName} secondary={value.sendingDate} />
+                                                    </ListItem>
+                                                </TableCell>
+                                                <TableCell>
+                                                    {value.status === 'pending' ? <div>
+                                                        <Button color='primary' onClick={this.acceptReq.bind(this, value.key, index)}>Accept</Button>/<Button color='secondary' onClick={this.rejectReq.bind(this, value.key, index)}>Reject</Button></div> : value.status}
+                                                </TableCell>
+                                                <TableCell>{value.date} & {value.time}</TableCell>
+                                                <TableCell><Button color='secondary'>Get Directiom</Button></TableCell>
+                                            </TableRow>
+                                        }
+
+                                    })}
+                                </TableBody>
+                            </Table>
+                        </Paper>
+                    </TabContainer> : <h2>No Request Yet...</h2>}
                 </SwipeableViews>
-            <Zoom
-                key='primary'
-                in={true}
-                // timeout={transitionDuration}
-                // style={{
-                //     transitionDelay: `${this.state.value === index ? transitionDuration.exit : 0}ms`,
-                // }}
-                unmountOnExit
-            >
-                <Button variant="fab" color="primary">
+                <Zoom
+                    key='primary'
+                    in={true}
+                    // timeout={transitionDuration}
+                    // style={{
+                    //     transitionDelay: `${this.state.value === index ? transitionDuration.exit : 0}ms`,
+                    // }}
+                    unmountOnExit
+                >
                     <Icon fontSize='large'>+</Icon>
-                </Button>
-            </Zoom>
+                </Zoom>
 
-            <Button onClick={() => { this.setState({ startMeeting: true }) }}  >Set Meeting</Button>
+                <Button onClick={() => { this.setState({ startMeeting: true }) }}  >Set Meeting</Button>
             </div >
         );
     }
 
     render() {
-        const { startMeeting, meetings, meetingScreen, meetingLocation, meetPoint, currentUser, directions, date, time } = this.state;
-
+        const { startMeeting, meetingReciever, meetingSender, meetingScreen, meetingLocation, meetPoint, currentUser, directions, date, time } = this.state;
+        const { logout } = this.props
+        // console.log(meetingLocation)
+        // console.log(logout)
         return (
             <div>
+                <PersistentDrawerLeft logout={logout} />
+                {/* <ApBar /> */}
                 <MeetingPoint />
-
-                {!startMeeting && !meetingScreen && meetings.length === 0 && (
-                    <div>
-                        <h3>You haven’t done any meeting yet!</h3>
-                        <p>try creating a new meeting!</p>
-                        <Button onClick={() => { this.setState({ startMeeting: true }) }} >Set a meeting!</Button>
+                <center>
+                    {!startMeeting && !meetingScreen && meetingReciever.length === 0 && meetingSender.length === 0 && (
+                        <div>
+                            <h3>You haven’t done any meeting yet!</h3>
+                            <p>try creating a new meeting!</p>
+                            <Button onClick={() => { this.setState({ startMeeting: true }) }} >Set a meeting!</Button>
+                        </div>
+                    )}
+                    {!startMeeting && !meetingScreen && (meetingSender.length >= 1 || meetingReciever.length >= 1) && this.renderMeetings()}
+                    {startMeeting && !meetingScreen && this.renderCards()}
+                    {meetingScreen && !meetingLocation && !directions && this.renderMeetingScreen()}
+                    {meetingScreen && meetingLocation && !meetPoint && <div>
+                        <Button onClick={() => { this.setState({ meetPoint: true, directions: true }) }}>Next</Button>
+                        <Button onClick={this.getDirections}>Get location</Button>
+                    </div>}
+                    {meetingScreen && meetPoint && <div>
+                        <h1>Select meeting date and time</h1>
+                        <TextField
+                            type='date'
+                            onChange={(e) => this.setState({ date: e.target.value })}
+                            defaultValue={`${new Date().getUTCFullYear().toString()}-0${new Date().getMonth().toString()}-${new Date().getDate().toString()}`}
+                        />
+                        <TextField
+                            type='time'
+                            defaultValue={`0${new Date().getHours().toString()}:${new Date().getMinutes().toString()}`}
+                            onChange={(e) => this.setState({ time: e.target.value })}
+                        />
+                        {(date && time) ? <Button onClick={this.sendReq}>Send Request</Button> : <p>Please select date and time...</p>}
                     </div>
-                )}
-                {!startMeeting && !meetingScreen && meetings.length >= 1 && this.renderMeetings()}
-                {startMeeting && !meetingScreen && this.renderCards()}
-                {meetingScreen && !meetingLocation && !directions && this.renderMeetingScreen()}
-                {meetingScreen && meetingLocation && !meetPoint && <div>
-                    <Button onClick={() => { this.setState({ meetPoint: true, meetingLocation: null, directions: true }) }}>Next</Button>
-                    <Button onClick={this.getDirections}>Get location</Button>
-                </div>}
-                {meetingScreen && meetPoint && <div>
-                    <h1>Select meeting date and time</h1>
-                    <TextField
-                        type='date'
-                        onChange={(e) => this.setState({ date: e.target.value })}
-                        defaultValue={`${new Date().getUTCFullYear().toString()}-0${new Date().getMonth().toString()}-${new Date().getDate().toString()}`}
-                    />
-                    <TextField
-                        type='time'
-                        defaultValue={`0${new Date().getHours().toString()}:${new Date().getMinutes().toString()}`}
-                        onChange={(e) => this.setState({ time: e.target.value })}
-                    />
-                    {(date && time) ? <Button onClick={this.sendReq}>Send Request</Button> : <p>Please select date and time...</p>}
-                </div>
-                }
+                    }
 
 
-                {meetingLocation && <MyMapComponent
-                    isMarkerShown={true}
-                    googleMapURL="https://maps.googleapis.com/maps/api/js?key=AIzaSyCJfivohMbjl26zRJPwsR772a-ejcku7s8&v=3.exp&libraries=geometry,drawing,places"
-                    loadingElement={<div style={{ height: `100%` }} />}
-                    containerElement={<div style={{ height: `400px` }} />}
-                    mapElement={<div style={{ height: `100%` }} />}
-                    location={currentUser.userLocation}
-                    directions={directions}
-                    meetingLocation={meetingLocation}
-                />}
+                    {meetingLocation && !meetPoint && <MyMapComponent
+                        isMarkerShown={true}
+                        googleMapURL="https://maps.googleapis.com/maps/api/js?key=AIzaSyCJfivohMbjl26zRJPwsR772a-ejcku7s8&v=3.exp&libraries=geometry,drawing,places"
+                        loadingElement={<div style={{ height: `100%` }} />}
+                        containerElement={<div style={{ height: `400px` }} />}
+                        mapElement={<div style={{ height: `100%` }} />}
+                        location={currentUser.userLocation}
+                        directions={directions}
+                        meetingLocation={meetingLocation}
+                    />}
+                </center>
             </div>
         );
     }
